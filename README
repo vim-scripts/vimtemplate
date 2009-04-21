@@ -1,0 +1,122 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=2615
+
+see latest version at http://github.com/tyru/vimtemplate.vim/
+and if you know more about template syntax, see my template files in .vim at http://github.com/tyru/dotfiles/
+
+My .vimrc setting:
+  let g:vt_template_dir_path = expand("$HOME/.vim/template")
+  let g:vt_command = ""
+  let g:vt_author = "tyru"
+  let g:vt_email = "tyru.exe@gmail.com"
+
+  let s:files_tmp = {
+      &#039cppsrc.cpp'    : "cpp",
+      &#039csharp.cs'     : "cs",
+      &#039csrc.c'        : "c",
+      &#039header.h'      : "c",
+      &#039hina.html'     : "html",
+      &#039javasrc.java'  : "java",
+      &#039perl.pl'       : "perl",
+      &#039perlmodule.pm' : "perl",
+      &#039python.py'     : "python",
+      &#039scala.scala'   : "scala",
+      &#039scheme.scm'    : "scheme",
+      &#039vimscript.vim' : "vim"
+  \}
+  let g:vt_filetype_files = join(map(keys(s:files_tmp), 'v:val . "=" . s:files_tmp[v:val]'), ',')
+  unlet s:files_tmp
+
+Usage:
+  COMMANDS:
+      VimTemplate
+          open template files list.
+
+  MAPPING:
+      gt
+          open template files list.
+
+  GLOBAL VARIABLES:
+      g:vt_template_dir_path (default:"$HOME/.vim/template")
+          search files in this dir.
+          to specify multi-dirs, set paths joined with ",".
+
+      g:vt_command (default:"VimTemplate")
+          command name.
+          if this is empty string, won't define the command.
+
+      g:vt_mapping (default:"gt")
+          mapping.
+          if this is empty string, won't define the mapping.
+
+      g:vt_list_buf_height (default:7)
+          height of list buffer.
+          buffer shows you list of template files.
+
+      g:vt_filetype_files (default: "")
+          when you load one of these files or exec :setlocal ft=<filetype>.
+          search these files in your g:vt_template_dir_path.
+          e.g.: "java_template.java=java,cpp_template.cpp=cpp"
+
+      g:vt_author
+          expand <%author%> to this value.
+
+      g:vt_email
+          expand <%email%> to this value.
+
+  TEMPLATE SYNTAX:
+      please open the list buffer
+      after naming current buffer by
+
+      :e[dit] filename
+      or
+      :f[ile] filename
+
+      if you didn't, this script uses template file path.
+      and you don't have to delete whitespace in <%%>.
+      this plugin also allows both <%filename%> and <% filename %>.
+
+
+      <%eval:code%>
+          will expand into result value of code.
+
+      <%path%>
+          will expand into current path.
+          same as <%eval:expand('%')%>.
+
+      <%filename%>
+          will expand into current file name.
+          same as <%eval:expand('%:t')%>.
+
+      <%filename_noext%>
+          will expand into current file name without extension.
+          same as <%eval:expand('%:t:r')%>.
+
+      <%filename_ext%>
+          will expand into current filename's extension.
+          same as <%eval:expand('%:e')%>.
+
+      <%filename_camel%>
+        will expand into camel case of expand('%:t:r').
+        so extension is not added to result.
+
+        e.g.:
+            foo-bar.baz => FooBar
+            foo_bar.baz => FooBar
+
+      <%filename_snake%>
+        will expand into snake case of expand('%:t:r').
+        so extension is not added to result.
+
+        e.g.: FooBar.baz => foo_bar
+
+      <%parent_dir%>
+          will expand into current file's dir.
+          same as <%eval:expand('%:p:h')%>.
+
+      <%author%>
+          same as <% eval: g:vt_author %>.
+
+      <%email%>
+          same as <% eval: g:vt_email %>.
+
+
