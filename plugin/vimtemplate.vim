@@ -4,9 +4,9 @@ scriptencoding utf-8
 " DOCUMENT {{{1
 "==================================================
 " Name: vimtemplate
-" Version: 0.0.2
-" Author:  tyru <tyru.exe+vim@gmail.com>
-" Last Change: 2009-05-28.
+" Version: 0.0.3
+" Author:  tyru <tyru.exe@gmail.com>
+" Last Change: 2009-05-31.
 "
 " Change Log: {{{2
 "   0.0.0: Initial upload.
@@ -15,6 +15,7 @@ scriptencoding utf-8
 "   and delete g:vt_support_command and g:vt_support_mapping.
 "   not to define/map command/mapping.
 "   let g:vt_command/g:vt_mapping be empty.
+"   0.0.3: add <%author%>, <%email%>, <%filename_camel%>, <%filename_snake%>
 " }}}2
 "
 " Usage: {{{2
@@ -52,14 +53,23 @@ scriptencoding utf-8
 "           search these files in your g:vt_template_dir_path.
 "           e.g.: "java_template.java=java,cpp_template.cpp=cpp"
 "
+"       g:vt_author
+"           expand <%author%> to this value.
+"
+"       g:vt_email
+"           expand <%email%> to this value.
+"
 "   TEMPLATE SYNTAX:
 "       please open the list buffer
 "       after naming current buffer by
+"
 "       :e[dit] filename
 "       or
 "       :f[ile] filename
 "
 "       if you didn't, this script uses template file path.
+"       and you don't have to delete whitespace in <%%>.
+"       this plugin also allows both <%filename%> and <% filename %>.
 "
 "
 "       <%eval:code%>
@@ -81,6 +91,11 @@ scriptencoding utf-8
 "           will expand into current file's dir.
 "           same as <%eval:expand('%:p:h')%>.
 "           
+"       <%author%>
+"           same as <% eval: g:vt_author %>.
+"
+"       <%email%>
+"           same as <% eval: g:vt_email %>.
 "
 " }}}2
 "==================================================
@@ -116,6 +131,12 @@ if !exists('g:vt_list_buf_height')
 endif
 if !exists('g:vt_filetype_files')
     let g:vt_filetype_files = ''
+endif
+if !exists('g:vt_author')
+    let g:vt_author = ''
+endif
+if !exists('g:vt_email')
+    let g:vt_email = ''
 endif
 " }}}1
 
@@ -157,18 +178,19 @@ endfunc
 func! s:apply_template(text, path)
     let text = a:text
     let path = expand('%') == '' ? a:path : expand('%')
-    let vsp_regex = '\m<%\s*\(eval:\)\=\s*\(.*\)\s*%>'
+    let vsp_regex = '\m<%\(.\{-}\)%>'
     let [i, len] = [0, len(text)]
 
     while i < len
         let lis = matchlist(text[i], vsp_regex)
-        call filter(lis, 'v:val != ""')
+        call filter(lis, '! empty(v:val)')
 
-        if !empty(lis)
+        while !empty(lis)
             let replaced = ''
 
-            if lis[1] ==# 'eval:'
-                let replaced = eval(lis[2])
+            if lis[1] =~# '\m\s*eval:'
+                let code = substitute(lis[1], '\m\s*eval:', '', '')
+                let replaced = eval(code)
             else
                 if lis[1] ==# 'path'
                     let replaced = path
@@ -176,13 +198,32 @@ func! s:apply_template(text, path)
                     let replaced = fnamemodify(path, ':t')
                 elseif lis[1] ==# 'filename_noext'
                     let replaced = fnamemodify(path, ':t:r')
+                elseif lis[1] ==# 'filename_camel'
+                    let replaced = fnamemodify(path, ':t:r')
+                    let m = get(matchlist(replaced, '_.'), 0, '')
+                    while m != ''
+                        let replaced = substitute(replaced, m, toupper(m[1]), '')
+                        let m = get(matchlist(replaced, '_.'), 0, '')
+                    endwhile
+                    let replaced = toupper(replaced[0]) . replaced[1:]
+                elseif lis[1] ==# 'filename_snake'
+                    let replaced = fnamemodify(path, ':t:r')
+                    let l = split(replaced, '\zs')
+                    let mapped = map(l, 'v:val =~# "[A-Z]" ? "_".tolower(v:val) : v:val')
+                    let replaced = join(mapped, '')
                 elseif lis[1] ==# 'parent_dir'
                     let replaced = fnamemodify(path, ':p:h')
+                elseif lis[1] ==# 'author'
+                    let replaced = g:vt_author
+                elseif lis[1] ==# 'email'
+                    let replaced = g:vt_email
                 endif
             endif
 
-            let text[i] = substitute(text[i], vsp_regex, replaced, 'g')
-        endif
+            let text[i] = substitute(text[i], vsp_regex, replaced, '')
+            let lis = matchlist(text[i], vsp_regex)
+            call filter(lis, '! empty(v:val)')
+        endwhile
 
         let i = i + 1
     endwhile
