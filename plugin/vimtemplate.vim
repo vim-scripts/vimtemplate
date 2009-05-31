@@ -4,7 +4,7 @@ scriptencoding utf-8
 " DOCUMENT {{{1
 "==================================================
 " Name: vimtemplate
-" Version: 0.0.3
+" Version: 0.0.4
 " Author:  tyru <tyru.exe@gmail.com>
 " Last Change: 2009-05-31.
 "
@@ -16,6 +16,8 @@ scriptencoding utf-8
 "   not to define/map command/mapping.
 "   let g:vt_command/g:vt_mapping be empty.
 "   0.0.3: add <%author%>, <%email%>, <%filename_camel%>, <%filename_snake%>
+"   0.0.4: delete g:vt_files_using_template. and support modeline in
+"   template file.
 " }}}2
 "
 " Usage: {{{2
@@ -31,12 +33,6 @@ scriptencoding utf-8
 "       g:vt_template_dir_path (default:"$HOME/.vim/template")
 "           search files in this dir.
 "           to specify multi-dirs, set paths joined with ",".
-"
-"       g:vt_files_using_template (default:"")
-"           files using template joined with ",".
-"           search these files in your g:vt_template_dir_path.
-"           see TEMPLATE SYNTAX.
-"           e.g.: "java_template.java,cpp_template.cpp"
 "
 "       g:vt_command (default:"VimTemplate")
 "           command name.
@@ -117,9 +113,6 @@ let s:caller_winnr = -1
 if !exists('g:vt_template_dir_path')
     let g:vt_template_dir_path = '$HOME/.vim/template'
 endif
-if !exists('g:vt_files_using_template')
-    let g:vt_files_using_template = ""
-endif
 if !exists('g:vt_command')
     let g:vt_command = 'VimTemplate'
 endif
@@ -177,53 +170,13 @@ endfunc
 " s:apply_template(text, path) {{{2
 func! s:apply_template(text, path)
     let text = a:text
-    let path = expand('%') == '' ? a:path : expand('%')
-    let vsp_regex = '\m<%\(.\{-}\)%>'
     let [i, len] = [0, len(text)]
 
     while i < len
-        let lis = matchlist(text[i], vsp_regex)
-        call filter(lis, '! empty(v:val)')
-
-        while !empty(lis)
-            let replaced = ''
-
-            if lis[1] =~# '\m\s*eval:'
-                let code = substitute(lis[1], '\m\s*eval:', '', '')
-                let replaced = eval(code)
-            else
-                if lis[1] ==# 'path'
-                    let replaced = path
-                elseif lis[1] ==# 'filename'
-                    let replaced = fnamemodify(path, ':t')
-                elseif lis[1] ==# 'filename_noext'
-                    let replaced = fnamemodify(path, ':t:r')
-                elseif lis[1] ==# 'filename_camel'
-                    let replaced = fnamemodify(path, ':t:r')
-                    let m = get(matchlist(replaced, '_.'), 0, '')
-                    while m != ''
-                        let replaced = substitute(replaced, m, toupper(m[1]), '')
-                        let m = get(matchlist(replaced, '_.'), 0, '')
-                    endwhile
-                    let replaced = toupper(replaced[0]) . replaced[1:]
-                elseif lis[1] ==# 'filename_snake'
-                    let replaced = fnamemodify(path, ':t:r')
-                    let l = split(replaced, '\zs')
-                    let mapped = map(l, 'v:val =~# "[A-Z]" ? "_".tolower(v:val) : v:val')
-                    let replaced = join(mapped, '')
-                elseif lis[1] ==# 'parent_dir'
-                    let replaced = fnamemodify(path, ':p:h')
-                elseif lis[1] ==# 'author'
-                    let replaced = g:vt_author
-                elseif lis[1] ==# 'email'
-                    let replaced = g:vt_email
-                endif
-            endif
-
-            let text[i] = substitute(text[i], vsp_regex, replaced, '')
-            let lis = matchlist(text[i], vsp_regex)
-            call filter(lis, '! empty(v:val)')
-        endwhile
+        " template syntax
+        let text[i] = s:expand_template_syntax(text[i], a:path)
+        " modeline in template file
+        call s:eval_modeline(text[i], a:path)
 
         let i = i + 1
     endwhile
@@ -232,24 +185,80 @@ func! s:apply_template(text, path)
 endfunc
 " }}}2
 
-" s:paste_into_main_buffer(template_path) {{{2
-func! s:paste_into_main_buffer(template_path)
-    let will_apply_template = 0
-    for i in split(g:vt_files_using_template, ',')
-        if i ==# a:template_path
-            let will_apply_template = 1
-            break
-        endif
-    endfor
+" s:expand_template_syntax(line, path) {{{2
+func! s:expand_template_syntax(line, path)
+    let line = a:line
+    let regex = '\m<%\(.\{-}\)%>'
+    let path = expand('%') == '' ? a:path : expand('%')
+    let replaced = ''
 
-    " paste buffer into main buffer
-    if will_apply_template
-        let text = readfile(a:template_path)
-        let text = s:apply_template(text, a:template_path)
-        call s:multi_setline(text)
-    else
-        %delete _
-        execute '0read ' . a:template_path
+    let lis = matchlist(line, regex)
+    call filter(lis, '! empty(v:val)')
+
+    while !empty(lis)
+        if lis[1] =~# '\m\s*eval:'
+            let code = substitute(lis[1], '\m\s*eval:', '', '')
+            let replaced = eval(code)
+        else
+            if lis[1] ==# 'path'
+                let replaced = path
+            elseif lis[1] ==# 'filename'
+                let replaced = fnamemodify(path, ':t')
+            elseif lis[1] ==# 'filename_noext'
+                let replaced = fnamemodify(path, ':t:r')
+            elseif lis[1] ==# 'filename_camel'
+                let replaced = fnamemodify(path, ':t:r')
+                let m = get(matchlist(replaced, '_.'), 0, '')
+                while m != ''
+                    let replaced = substitute(replaced, m, toupper(m[1]), '')
+                    let m = get(matchlist(replaced, '_.'), 0, '')
+                endwhile
+                let replaced = toupper(replaced[0]) . replaced[1:]
+            elseif lis[1] ==# 'filename_snake'
+                let replaced = fnamemodify(path, ':t:r')
+                let l = split(replaced, '\zs')
+                let mapped = map(l, 'v:val =~# "[A-Z]" ? "_".tolower(v:val) : v:val')
+                let replaced = join(mapped, '')
+            elseif lis[1] ==# 'parent_dir'
+                let replaced = fnamemodify(path, ':p:h')
+            elseif lis[1] ==# 'author'
+                let replaced = g:vt_author
+            elseif lis[1] ==# 'email'
+                let replaced = g:vt_email
+            endif
+        endif
+
+        let line = substitute(line, regex, replaced, '')
+        let lis = matchlist(line, regex)
+        call filter(lis, '! empty(v:val)')
+    endwhile
+
+    return line
+endfunc
+" }}}2
+
+" s:eval_modeline(line, path) {{{2
+func! s:eval_modeline(line, path)
+    let line = a:line
+    " according to vim help, there are 2 types of modeline.
+    "   [text]{white}{vi:|vim:|ex:}[white]{options}
+    "   [text]{white}{vi:|vim:|ex:}[white]se[t] {options}:[text]
+    let regex = '\m[ \t]*\(vi\|vim\|ex\):\(.*\):'
+    let match = get(matchlist(line, regex), 2, '')
+
+    if match != ''
+        " NOTE set opt=: is NG but not needed to support it maybe
+        for opt in split(match, ':')
+            if opt =~# '\mset\='
+                " XXX modeline is setlocal?
+                let opt = substitute(opt, '\mset\=', 'setlocal', '')
+                execute opt
+            else
+                " XXX modeline is setlocal?
+                let opt = 'setlocal ' . opt
+                execute opt
+            endif
+        endfor
     endif
 endfunc
 " }}}2
@@ -266,7 +275,10 @@ func! s:open_file()
     endif
 
     call s:close_list_buffer()
-    call s:paste_into_main_buffer(template_path)
+    " paste buffer into main buffer
+    let text = readfile(template_path)
+    let text = s:apply_template(text, template_path)
+    call s:multi_setline(text)
 
     let ftype = s:get_filetype_of(template_path)
     if ftype != ''
