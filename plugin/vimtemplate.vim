@@ -4,9 +4,9 @@ scriptencoding utf-8
 " DOCUMENT {{{1
 "==================================================
 " Name: vimtemplate
-" Version: 0.0.5
+" Version: 0.0.6
 " Author:  tyru <tyru.exe@gmail.com>
-" Last Change: 2009-09-11.
+" Last Change: 2009-09-13.
 "
 " Description:
 "   MRU-like simple template management plugin
@@ -22,6 +22,15 @@ scriptencoding utf-8
 "   0.0.4: delete g:vt_files_using_template. and support modeline in
 "   template file.
 "   0.0.5: speed optimization and fix bugs.
+"   0.0.6:
+"       - fix bugs:
+"           - did not ignore whitespaces in <% ... %>
+"           - if filename is 'FooBar.baz',
+"             <%filename_snake%> was expanded to '_foo_bar'.
+"             now is expanded to 'foo_bar'.
+"       - more speed optimization
+"       - <%filename_camel%> now supports '-' and '_' in filename
+"       - implement <%filename_ext%> as template syntax
 " }}}2
 "
 " My .vimrc setting: {{{2
@@ -68,6 +77,7 @@ scriptencoding utf-8
 "
 "       g:vt_mapping (default:"gt")
 "           mapping.
+"           if this is empty string, won't define the mapping.
 "
 "       g:vt_list_buf_height (default:7)
 "           height of list buffer.
@@ -112,10 +122,28 @@ scriptencoding utf-8
 "           will expand into current file name without extension.
 "           same as <%eval:expand('%:t:r')%>.
 "
+"       <%filename_ext%>
+"           will expand into current filename's extension.
+"           same as <%eval:expand('%:e')%>.
+"
+"       <%filename_camel%>
+"         will expand into camel case of expand('%:t:r').
+"         so extension is not added to result.
+"
+"         e.g.:
+"             foo-bar.baz => FooBar
+"             foo_bar.baz => FooBar
+"
+"       <%filename_snake%>
+"         will expand into snake case of expand('%:t:r').
+"         so extension is not added to result.
+"
+"         e.g.: FooBar.baz => foo_bar
+"
 "       <%parent_dir%>
 "           will expand into current file's dir.
 "           same as <%eval:expand('%:p:h')%>.
-"           
+"
 "       <%author%>
 "           same as <% eval: g:vt_author %>.
 "
@@ -126,7 +154,6 @@ scriptencoding utf-8
 "
 " TODO: {{{2
 "   - implement auto loading file(autocmd)
-"   - have g:vt_filetype_files as hash.
 " }}}2
 "==================================================
 " }}}1
@@ -242,7 +269,7 @@ endfunc
 " s:expand_template_syntax(line, path) {{{2
 func! s:expand_template_syntax(line, path)
     let line = a:line
-    let regex = '\m<%\(.\{-}\)%>'
+    let regex = '\m<%\s*\(.\{-}\)\s*%>'
     let path = expand('%') == '' ? a:path : expand('%')
     let replaced = ''
 
@@ -256,27 +283,39 @@ func! s:expand_template_syntax(line, path)
         else
             if lis[1] ==# 'path'
                 let replaced = path
+
             elseif lis[1] ==# 'filename'
                 let replaced = fnamemodify(path, ':t')
+
             elseif lis[1] ==# 'filename_noext'
                 let replaced = fnamemodify(path, ':t:r')
+
+            elseif lis[1] ==# 'filename_ext'
+                let replaced = fnamemodify(path, ':e')
+
             elseif lis[1] ==# 'filename_camel'
                 let replaced = fnamemodify(path, ':t:r')
-                let m = get(matchlist(replaced, '_.'), 0, '')
+                let m = get(matchlist(replaced, '[-_].'), 0, '')
                 while m != ''
                     let replaced = substitute(replaced, m, toupper(m[1]), '')
-                    let m = get(matchlist(replaced, '_.'), 0, '')
+                    let m = get(matchlist(replaced, '[-_].'), 0, '')
                 endwhile
                 let replaced = toupper(replaced[0]) . replaced[1:]
+
             elseif lis[1] ==# 'filename_snake'
                 let replaced = fnamemodify(path, ':t:r')
-                let l = split(replaced, '\zs')
-                let mapped = map(l, 'v:val =~# "[A-Z]" ? "_".tolower(v:val) : v:val')
-                let replaced = join(mapped, '')
+                let camels = split(replaced, '\%([A-Z]\)\@=')
+                let camels =
+                            \[tolower(strpart(camels[0], 0, 1)).strpart(camels[0], 1)] +
+                            \map(camels[1:], '"_".tolower(strpart(v:val, 0, 1)).strpart(v:val, 1)')
+                let replaced = join(camels, '')
+
             elseif lis[1] ==# 'parent_dir'
                 let replaced = fnamemodify(path, ':p:h')
+
             elseif lis[1] ==# 'author'
                 let replaced = g:vt_author
+
             elseif lis[1] ==# 'email'
                 let replaced = g:vt_email
             endif
@@ -356,30 +395,21 @@ func! s:close_list_buffer()
 endfunc
 " }}}2
 
-" s:get_tempname() {{{
-func! s:get_tempname()
-    if s:tempname == ''
-        let s:tempname = tempname().localtime()
-    endif
-    return s:tempname
-endfunc
-" }}}
-
 " s:multi_setline(lines) {{{
 func! s:multi_setline(lines)
     " delete all
     %delete _
-    " write all lines to tempname() . localtime()
-    while 1
-        let tmpname = s:get_tempname()
-        if writefile(a:lines, tmpname) != -1
-            break
-        endif
-    endwhile
-    " read it
-    silent execute 'read '.tmpname
-    " delete waste top of blank line
+
+    let reg_z = getreg('z', 1)
+    let reg_z_type = getregtype('z')
+    let @z = join(a:lines, "\n")
+
+    " write all lines
+    silent put z
+    " delete the top of one waste blank line
     normal! ggdd
+
+    call setreg('z', reg_z, reg_z_type)
 endfunc
 " }}}
 
@@ -410,7 +440,7 @@ func! s:show_files_list()
 
     """ settings """
 
-    setlocal bufhidden=delete
+    setlocal bufhidden=wipe
     setlocal buftype=nofile
     setlocal cursorline
     setlocal nobuflisted
